@@ -1,9 +1,10 @@
 FROM node:24-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV CI=true
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
+# Install dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     g++ \
     make \
@@ -21,11 +22,16 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy code-server source
+# Copy source code
 COPY . .
 
+# Verify VS Code submodule exists
+RUN test -f lib/vscode/package.json || \
+    (echo "ERROR: VS Code submodule is missing. Initialize lib/vscode first." && exit 1)
+
 # Apply VS Code patches
-RUN quilt push -a
+RUN cd lib/vscode && \
+    QUILT_PATCHES=../../patches quilt push -a
 
 # Install dependencies
 RUN npm install
@@ -39,8 +45,7 @@ RUN VERSION=0.0.0 npm run build:vscode
 # Create production release
 RUN KEEP_MODULES=1 npm run release
 
-# Render web service port
 EXPOSE 8080
 
 # Start code-server
-CMD ["sh", "-c", "test -n \"$PASSWORD\" || (echo 'PASSWORD is required' && exit 1); mkdir -p /tmp/code-server-data /tmp/code-server-extensions /tmp/workspace; printf 'bind-addr: 0.0.0.0:%s\\nauth: password\\npassword: \"%s\"\\ncert: false\\n' \"${PORT:-8080}\" \"$PASSWORD\" > /tmp/code-server.yaml; exec ./release/bin/code-server --config /tmp/code-server.yaml --user-data-dir /tmp/code-server-data --extensions-dir /tmp/code-server-extensions /tmp/workspace"]
+CMD ["sh", "-c", "set -eu; : \"${PASSWORD:?PASSWORD is required}\"; mkdir -p /tmp/code-server-data /tmp/code-server-extensions /tmp/workspace; printf 'bind-addr: 0.0.0.0:%s\\nauth: password\\npassword: \"%s\"\\ncert: false\\n' \"${PORT:-8080}\" \"$PASSWORD\" > /tmp/code-server.yaml; exec ./release/bin/code-server --config /tmp/code-server.yaml --user-data-dir /tmp/code-server-data --extensions-dir /tmp/code-server-extensions /tmp/workspace"]
